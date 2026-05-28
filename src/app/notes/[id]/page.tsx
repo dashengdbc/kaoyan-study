@@ -1,13 +1,12 @@
 'use client';
 
-import { useState, useMemo, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { useParams, useRouter } from 'next/navigation';
-import { motion } from 'framer-motion';
 import { ArrowLeft, Save, Eye, Edit, Image, FileText, Upload } from 'lucide-react';
 import { useAppStore } from '@/store';
 import { useNotesStore } from '@/store/notesStore';
 import { AppLayout } from '@/components/layout/AppLayout';
-import { Button } from '@/components/ui/Button';
+import { extractTextFromPDF, readMarkdownFile, downloadMarkdown } from '@/lib/pdfParser';
 
 export default function NoteEditPage() {
   const params = useParams();
@@ -22,7 +21,6 @@ export default function NoteEditPage() {
   const [subjectId, setSubjectId] = useState('');
   const fileInputRef = useRef<HTMLInputElement>(null);
   const imageInputRef = useRef<HTMLInputElement>(null);
-  const textareaRef = useRef<HTMLTextAreaElement>(null);
 
   useEffect(() => {
     const note = getNoteById(noteId);
@@ -33,13 +31,11 @@ export default function NoteEditPage() {
     }
   }, [noteId, getNoteById]);
 
-  const subject = useMemo(
-    () => subjects.find((s) => s.id === subjectId),
-    [subjects, subjectId]
-  );
+  const subject = subjects.find((s) => s.id === subjectId);
 
   const handleSave = () => {
     updateNote(noteId, { title, content, subjectId });
+    alert('保存成功！');
   };
 
   const handleTitleChange = (newTitle: string) => {
@@ -47,20 +43,25 @@ export default function NoteEditPage() {
     updateNote(noteId, { title: newTitle });
   };
 
-  const handleContentChange = (newContent: string) => {
-    setContent(newContent);
-  };
-
   const handleImportFile = async (event: React.ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0];
     if (!file) return;
 
-    if (file.name.endsWith('.md')) {
-      const text = await file.text();
-      setContent((prev) => prev + '\n\n' + text);
-    } else if (file.name.endsWith('.pdf')) {
-      // For PDF, we'll add a reference note
-      setContent((prev) => prev + `\n\n[PDF 文件: ${file.name}]`);
+    try {
+      let text = '';
+
+      if (file.name.endsWith('.md')) {
+        text = await readMarkdownFile(file);
+      } else if (file.name.endsWith('.pdf')) {
+        text = await extractTextFromPDF(file);
+      }
+
+      if (text) {
+        setContent((prev) => prev + '\n\n' + text);
+      }
+    } catch (error) {
+      console.error('Error importing file:', error);
+      alert('导入文件失败');
     }
 
     if (fileInputRef.current) {
@@ -72,14 +73,18 @@ export default function NoteEditPage() {
     const file = event.target.files?.[0];
     if (!file) return;
 
-    // Convert image to base64
-    const reader = new FileReader();
-    reader.onload = (e) => {
-      const base64 = e.target?.result as string;
-      const imageMarkdown = `![${file.name}](${base64})`;
-      setContent((prev) => prev + '\n\n' + imageMarkdown);
-    };
-    reader.readAsDataURL(file);
+    try {
+      const reader = new FileReader();
+      reader.onload = (e) => {
+        const base64 = e.target?.result as string;
+        const imageMarkdown = `![${file.name}](${base64})`;
+        setContent((prev) => prev + '\n\n' + imageMarkdown);
+      };
+      reader.readAsDataURL(file);
+    } catch (error) {
+      console.error('Error importing image:', error);
+      alert('导入图片失败');
+    }
 
     if (imageInputRef.current) {
       imageInputRef.current.value = '';
@@ -88,15 +93,7 @@ export default function NoteEditPage() {
 
   const handleExportMd = () => {
     const exportContent = `# ${title}\n\n${content}`;
-    const blob = new Blob([exportContent], { type: 'text/markdown' });
-    const url = URL.createObjectURL(blob);
-    const link = document.createElement('a');
-    link.href = url;
-    link.download = `${title}.md`;
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
-    URL.revokeObjectURL(url);
+    downloadMarkdown(exportContent, `${title}.md`);
   };
 
   return (
@@ -125,26 +122,31 @@ export default function NoteEditPage() {
             </div>
           </div>
           <div className="flex items-center gap-2">
-            <Button
-              variant={isEditing ? 'secondary' : 'ghost'}
-              size="sm"
+            <button
               onClick={() => setIsEditing(true)}
+              className={`flex items-center gap-1 px-3 py-2 rounded-md text-sm transition-colors ${
+                isEditing ? 'bg-primary text-white' : 'bg-hover text-foreground hover:bg-active'
+              }`}
             >
-              <Edit className="w-4 h-4 mr-1" />
+              <Edit className="w-4 h-4" />
               编辑
-            </Button>
-            <Button
-              variant={!isEditing ? 'secondary' : 'ghost'}
-              size="sm"
+            </button>
+            <button
               onClick={() => setIsEditing(false)}
+              className={`flex items-center gap-1 px-3 py-2 rounded-md text-sm transition-colors ${
+                !isEditing ? 'bg-primary text-white' : 'bg-hover text-foreground hover:bg-active'
+              }`}
             >
-              <Eye className="w-4 h-4 mr-1" />
+              <Eye className="w-4 h-4" />
               预览
-            </Button>
-            <Button size="sm" onClick={handleSave}>
-              <Save className="w-4 h-4 mr-1" />
+            </button>
+            <button
+              onClick={handleSave}
+              className="flex items-center gap-1 px-3 py-2 bg-green-600 text-white rounded-md text-sm hover:bg-green-700 transition-colors"
+            >
+              <Save className="w-4 h-4" />
               保存
-            </Button>
+            </button>
           </div>
         </div>
 
@@ -164,46 +166,37 @@ export default function NoteEditPage() {
             onChange={handleImportImage}
             className="hidden"
           />
-          <Button
-            variant="ghost"
-            size="sm"
+          <button
             onClick={() => fileInputRef.current?.click()}
+            className="flex items-center gap-1 px-3 py-2 bg-hover text-foreground rounded-md text-sm hover:bg-active transition-colors"
           >
-            <FileText className="w-4 h-4 mr-1" />
+            <FileText className="w-4 h-4" />
             导入文件
-          </Button>
-          <Button
-            variant="ghost"
-            size="sm"
+          </button>
+          <button
             onClick={() => imageInputRef.current?.click()}
+            className="flex items-center gap-1 px-3 py-2 bg-hover text-foreground rounded-md text-sm hover:bg-active transition-colors"
           >
-            <Image className="w-4 h-4 mr-1" />
+            <Image className="w-4 h-4" />
             插入图片
-          </Button>
+          </button>
           <div className="flex-1" />
-          <Button
-            variant="ghost"
-            size="sm"
+          <button
             onClick={handleExportMd}
+            className="flex items-center gap-1 px-3 py-2 bg-hover text-foreground rounded-md text-sm hover:bg-active transition-colors"
           >
-            <Upload className="w-4 h-4 mr-1" />
+            <Upload className="w-4 h-4" />
             导出 MD
-          </Button>
+          </button>
         </div>
 
         {/* Editor */}
-        <motion.div
-          initial={{ opacity: 0, y: 20 }}
-          animate={{ opacity: 1, y: 0 }}
-          className="flex-1 min-h-0"
-        >
-          {isEditing ? (
-            <textarea
-              ref={textareaRef}
-              value={content}
-              onChange={(e) => handleContentChange(e.target.value)}
-              className="w-full h-full p-6 bg-card border border-card-border rounded-lg text-foreground font-mono text-sm resize-none focus:outline-none focus:ring-2 focus:ring-primary"
-              placeholder="使用 Markdown 编写笔记...
+        {isEditing ? (
+          <textarea
+            value={content}
+            onChange={(e) => setContent(e.target.value)}
+            className="flex-1 min-h-[400px] p-6 bg-card border border-card-border rounded-lg text-foreground font-mono text-sm resize-none focus:outline-none focus:ring-2 focus:ring-primary"
+            placeholder="使用 Markdown 编写笔记...
 
 支持的语法：
 # 标题
@@ -212,25 +205,30 @@ export default function NoteEditPage() {
 ![图片描述](图片地址)
 
 点击上方按钮可导入文件或插入图片"
+          />
+        ) : (
+          <div className="flex-1 min-h-[400px] p-6 bg-card border border-card-border rounded-lg overflow-y-auto">
+            <div
+              className="prose prose-invert max-w-none"
+              dangerouslySetInnerHTML={{
+                __html: simpleMarkdownToHtml(content),
+              }}
             />
-          ) : (
-            <div className="h-full p-6 bg-card border border-card-border rounded-lg overflow-y-auto prose prose-invert max-w-none">
-              <div
-                dangerouslySetInnerHTML={{
-                  __html: simpleMarkdownToHtml(content),
-                }}
-              />
-            </div>
-          )}
-        </motion.div>
+          </div>
+        )}
       </div>
     </AppLayout>
   );
 }
 
 function simpleMarkdownToHtml(md: string): string {
+  if (!md) return '<p class="text-muted">暂无内容</p>';
+
   // Handle images
-  let html = md.replace(/!\[([^\]]*)\]\(([^)]+)\)/g, '<img src="$2" alt="$1" class="max-w-full h-auto rounded-lg my-4" />');
+  let html = md.replace(
+    /!\[([^\]]*)\]\(([^)]+)\)/g,
+    '<img src="$2" alt="$1" class="max-w-full h-auto rounded-lg my-4" />'
+  );
 
   // Handle headers
   html = html.replace(/^### (.*$)/gm, '<h3 class="text-lg font-semibold mt-6 mb-2">$1</h3>');
@@ -242,7 +240,7 @@ function simpleMarkdownToHtml(md: string): string {
   html = html.replace(/\*(.*?)\*/g, '<em>$1</em>');
 
   // Handle lists
-  html = html.replace(/^- (.*$)/gm, '<li class="ml-4">$1</li>');
+  html = html.replace(/^- (.*$)/gm, '<li class="ml-4 mb-1">$1</li>');
 
   // Handle line breaks
   html = html.replace(/\n\n/g, '</p><p class="mb-4">');
