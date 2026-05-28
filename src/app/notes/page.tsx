@@ -3,7 +3,7 @@
 import { useState, useMemo } from 'react';
 import Link from 'next/link';
 import { motion, AnimatePresence } from 'framer-motion';
-import { FileText, Plus, Search, Filter, Trash2 } from 'lucide-react';
+import { FileText, Plus, Search, Filter, Trash2, Download } from 'lucide-react';
 import { useAppStore } from '@/store';
 import { useNotesStore } from '@/store/notesStore';
 import { AppLayout } from '@/components/layout/AppLayout';
@@ -45,7 +45,7 @@ export default function NotesPage() {
   const handleAddNote = () => {
     if (!newNote.title.trim()) return;
 
-    addNote({
+    const noteId = addNote({
       title: newNote.title,
       content: '',
       subjectId: newNote.subjectId,
@@ -57,6 +57,19 @@ export default function NotesPage() {
 
   const handleDeleteNote = (id: string) => {
     deleteNote(id);
+  };
+
+  const handleExportNote = (note: any) => {
+    const content = `# ${note.title}\n\n${note.content}`;
+    const blob = new Blob([content], { type: 'text/markdown' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = `${note.title}.md`;
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    URL.revokeObjectURL(url);
   };
 
   const getSubjectById = (id: string) => subjects.find((s) => s.id === id);
@@ -150,23 +163,36 @@ export default function NotesPage() {
                       exit={{ opacity: 0, scale: 0.9 }}
                     >
                       <Card variant="interactive" className="group h-full">
-                        <Link href={`/notes/${note.id}`}>
-                          <CardContent className="p-4">
-                            <div className="flex items-start justify-between mb-2">
-                              <div
-                                className="w-2 h-2 rounded-full mt-1.5 shrink-0"
-                                style={{ backgroundColor: subject?.color || '#8B5CF6' }}
-                              />
+                        <CardContent className="p-4">
+                          <div className="flex items-start justify-between mb-2">
+                            <div
+                              className="w-2 h-2 rounded-full mt-1.5 shrink-0"
+                              style={{ backgroundColor: subject?.color || '#8B5CF6' }}
+                            />
+                            <div className="flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                              <button
+                                onClick={(e) => {
+                                  e.preventDefault();
+                                  handleExportNote(note);
+                                }}
+                                className="p-1 hover:bg-hover rounded text-muted hover:text-foreground"
+                                title="导出为 Markdown"
+                              >
+                                <Download className="w-4 h-4" />
+                              </button>
                               <button
                                 onClick={(e) => {
                                   e.preventDefault();
                                   handleDeleteNote(note.id);
                                 }}
-                                className="opacity-0 group-hover:opacity-100 p-1 hover:bg-hover rounded text-muted hover:text-red-500 transition-all"
+                                className="p-1 hover:bg-hover rounded text-muted hover:text-red-500"
+                                title="删除笔记"
                               >
                                 <Trash2 className="w-4 h-4" />
                               </button>
                             </div>
+                          </div>
+                          <Link href={`/notes/${note.id}`}>
                             <h3 className="text-sm font-semibold text-foreground mb-1 line-clamp-2">
                               {note.title}
                             </h3>
@@ -179,8 +205,8 @@ export default function NotesPage() {
                                 {new Date(note.updatedAt).toLocaleDateString('zh-CN')}
                               </span>
                             </div>
-                          </CardContent>
-                        </Link>
+                          </Link>
+                        </CardContent>
                       </Card>
                     </motion.div>
                   );

@@ -7,13 +7,12 @@ import { motion, AnimatePresence } from 'framer-motion';
 import {
   LayoutDashboard,
   Calendar,
-  BookOpen,
   AlertCircle,
-  Network,
   FileText,
   BarChart3,
   Timer,
   Settings,
+  Link2,
   ChevronLeft,
   ChevronRight,
 } from 'lucide-react';
@@ -21,10 +20,9 @@ import {
 const navItems = [
   { href: '/', label: '仪表盘', icon: LayoutDashboard },
   { href: '/plan', label: '学习计划', icon: Calendar },
-  { href: '/practice', label: '刷题练习', icon: BookOpen },
   { href: '/mistakes', label: '错题本', icon: AlertCircle },
-  { href: '/knowledge', label: '知识框架', icon: Network },
   { href: '/notes', label: '笔记', icon: FileText },
+  { href: '/obsidian', label: 'Obsidian', icon: Link2 },
   { href: '/stats', label: '学习统计', icon: BarChart3 },
   { href: '/pomodoro', label: '番茄钟', icon: Timer },
 ];
@@ -55,7 +53,7 @@ export function Sidebar() {
               className="flex items-center gap-2"
             >
               <div className="w-8 h-8 rounded-lg bg-primary flex items-center justify-center">
-                <BookOpen className="w-5 h-5 text-white" />
+                <FileText className="w-5 h-5 text-white" />
               </div>
               <span className="font-semibold text-foreground">考研助手</span>
             </motion.div>
@@ -67,7 +65,7 @@ export function Sidebar() {
               exit={{ opacity: 0 }}
               className="w-8 h-8 rounded-lg bg-primary flex items-center justify-center"
             >
-              <BookOpen className="w-5 h-5 text-white" />
+              <FileText className="w-5 h-5 text-white" />
             </motion.div>
           )}
         </AnimatePresence>
@@ -89,7 +87,6 @@ export function Sidebar() {
                   : 'text-muted hover:bg-hover hover:text-foreground'
               }`}
             >
-              {/* Active indicator */}
               {isActive && (
                 <motion.div
                   layoutId="activeNav"

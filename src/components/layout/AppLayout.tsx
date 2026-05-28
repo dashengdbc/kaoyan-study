@@ -6,8 +6,8 @@ import { motion, AnimatePresence } from 'framer-motion';
 import {
   LayoutDashboard,
   Calendar,
-  BookOpen,
   AlertCircle,
+  FileText,
   Timer,
 } from 'lucide-react';
 import { Sidebar } from './Sidebar';
@@ -20,9 +20,9 @@ interface AppLayoutProps {
 const mobileNavItems = [
   { href: '/', label: '首页', icon: LayoutDashboard },
   { href: '/plan', label: '计划', icon: Calendar },
-  { href: '/practice', label: '刷题', icon: BookOpen },
-  { href: '/pomodoro', label: '番茄钟', icon: Timer },
   { href: '/mistakes', label: '错题', icon: AlertCircle },
+  { href: '/notes', label: '笔记', icon: FileText },
+  { href: '/pomodoro', label: '番茄钟', icon: Timer },
 ];
 
 export function AppLayout({ children }: AppLayoutProps) {

@@ -2,42 +2,74 @@
 
 import { useState, useRef } from 'react';
 import { motion } from 'framer-motion';
-import { Download, Upload, Trash2, AlertCircle, CheckCircle } from 'lucide-react';
+import { Download, Upload, Trash2, AlertCircle, CheckCircle, FileText } from 'lucide-react';
 import { useAppStore } from '@/store';
 import { useNotesStore } from '@/store/notesStore';
 import { AppLayout } from '@/components/layout/AppLayout';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/Card';
 import { Button } from '@/components/ui/Button';
-import { exportData, importData, downloadJson, readFileAsText } from '@/lib/dataSync';
 
 export default function SettingsPage() {
   const [message, setMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
-  const handleExport = () => {
-    try {
-      const data = exportData();
-      const filename = `考研助手备份_${new Date().toISOString().split('T')[0]}.json`;
-      downloadJson(data, filename);
-      setMessage({ type: 'success', text: '数据导出成功' });
-    } catch (error) {
-      setMessage({ type: 'error', text: '导出失败' });
+  const handleExportAllNotes = () => {
+    const { notes } = useNotesStore.getState();
+
+    if (notes.length === 0) {
+      setMessage({ type: 'error', text: '没有可导出的笔记' });
+      return;
     }
+
+    // Export each note as a separate .md file
+    notes.forEach((note, index) => {
+      const content = `# ${note.title}\n\n${note.content}`;
+      const blob = new Blob([content], { type: 'text/markdown' });
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = `${note.title}.md`;
+      document.body.appendChild(link);
+
+      // Stagger downloads slightly
+      setTimeout(() => {
+        link.click();
+        document.body.removeChild(link);
+        URL.revokeObjectURL(url);
+      }, index * 100);
+    });
+
+    setMessage({ type: 'success', text: `正在导出 ${notes.length} 个笔记` });
   };
 
-  const handleImport = async (event: React.ChangeEvent<HTMLInputElement>) => {
-    const file = event.target.files?.[0];
-    if (!file) return;
+  const handleImportMdFiles = async (event: React.ChangeEvent<HTMLInputElement>) => {
+    const files = event.target.files;
+    if (!files || files.length === 0) return;
 
-    try {
-      const content = await readFileAsText(file);
-      const result = importData(content);
-      setMessage({ type: result.success ? 'success' : 'error', text: result.message });
-    } catch (error) {
-      setMessage({ type: 'error', text: '文件读取失败' });
+    const { addNote } = useNotesStore.getState();
+    const { subjects } = useAppStore.getState();
+    let importedCount = 0;
+
+    for (const file of files) {
+      if (file.name.endsWith('.md')) {
+        const content = await file.text();
+        const title = file.name.replace('.md', '');
+
+        addNote({
+          title,
+          content,
+          subjectId: subjects[0]?.id || 'other',
+        });
+
+        importedCount++;
+      }
     }
 
-    // Reset file input
+    setMessage({
+      type: 'success',
+      text: `成功导入 ${importedCount} 个 Markdown 文件`,
+    });
+
     if (fileInputRef.current) {
       fileInputRef.current.value = '';
     }
@@ -112,31 +144,32 @@ export default function SettingsPage() {
         <motion.div variants={itemVariants}>
           <Card>
             <CardHeader>
-              <CardTitle>数据管理</CardTitle>
+              <CardTitle>笔记管理</CardTitle>
             </CardHeader>
             <CardContent className="space-y-4">
               <div className="flex items-center justify-between p-4 rounded-lg border border-card-border bg-card">
                 <div>
-                  <h3 className="text-sm font-medium text-foreground">导出数据</h3>
-                  <p className="text-xs text-muted mt-1">将所有数据导出为 JSON 文件</p>
+                  <h3 className="text-sm font-medium text-foreground">导出笔记</h3>
+                  <p className="text-xs text-muted mt-1">将所有笔记导出为 Markdown 文件</p>
                 </div>
-                <Button onClick={handleExport} size="sm">
+                <Button onClick={handleExportAllNotes} size="sm">
                   <Download className="w-4 h-4 mr-2" />
-                  导出
+                  导出 MD
                 </Button>
               </div>
 
               <div className="flex items-center justify-between p-4 rounded-lg border border-card-border bg-card">
                 <div>
-                  <h3 className="text-sm font-medium text-foreground">导入数据</h3>
-                  <p className="text-xs text-muted mt-1">从 JSON 文件恢复数据</p>
+                  <h3 className="text-sm font-medium text-foreground">导入笔记</h3>
+                  <p className="text-xs text-muted mt-1">从 Markdown 文件导入笔记</p>
                 </div>
                 <div>
                   <input
                     ref={fileInputRef}
                     type="file"
-                    accept=".json"
-                    onChange={handleImport}
+                    accept=".md"
+                    multiple
+                    onChange={handleImportMdFiles}
                     className="hidden"
                   />
                   <Button
@@ -145,15 +178,25 @@ export default function SettingsPage() {
                     size="sm"
                   >
                     <Upload className="w-4 h-4 mr-2" />
-                    导入
+                    导入 MD
                   </Button>
                 </div>
               </div>
+            </CardContent>
+          </Card>
+        </motion.div>
 
+        {/* Danger Zone */}
+        <motion.div variants={itemVariants}>
+          <Card>
+            <CardHeader>
+              <CardTitle className="text-red-500">危险操作</CardTitle>
+            </CardHeader>
+            <CardContent>
               <div className="flex items-center justify-between p-4 rounded-lg border border-red-500/30 bg-red-500/5">
                 <div>
                   <h3 className="text-sm font-medium text-red-500">清除所有数据</h3>
-                  <p className="text-xs text-muted mt-1">删除所有学习数据，此操作不可恢复</p>
+                  <p className="text-xs text-muted mt-1">删除所有学习数据和笔记，此操作不可恢复</p>
                 </div>
                 <Button variant="danger" onClick={handleClearData} size="sm">
                   <Trash2 className="w-4 h-4 mr-2" />
@@ -175,6 +218,7 @@ export default function SettingsPage() {
                 <p>考研学习助手 v1.0.0</p>
                 <p>一个面向 iPad 的 PWA 学习应用</p>
                 <p>数据存储在浏览器本地，无需注册账号</p>
+                <p>支持与 Obsidian 双向同步</p>
               </div>
             </CardContent>
           </Card>

@@ -1,9 +1,9 @@
 'use client';
 
-import { useState, useMemo, useEffect } from 'react';
+import { useState, useMemo, useEffect, useRef } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import { motion } from 'framer-motion';
-import { ArrowLeft, Save, Eye, Edit } from 'lucide-react';
+import { ArrowLeft, Save, Eye, Edit, Image, FileText, Upload } from 'lucide-react';
 import { useAppStore } from '@/store';
 import { useNotesStore } from '@/store/notesStore';
 import { AppLayout } from '@/components/layout/AppLayout';
@@ -20,6 +20,9 @@ export default function NoteEditPage() {
   const [title, setTitle] = useState('');
   const [content, setContent] = useState('');
   const [subjectId, setSubjectId] = useState('');
+  const fileInputRef = useRef<HTMLInputElement>(null);
+  const imageInputRef = useRef<HTMLInputElement>(null);
+  const textareaRef = useRef<HTMLTextAreaElement>(null);
 
   useEffect(() => {
     const note = getNoteById(noteId);
@@ -48,11 +51,59 @@ export default function NoteEditPage() {
     setContent(newContent);
   };
 
+  const handleImportFile = async (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    if (!file) return;
+
+    if (file.name.endsWith('.md')) {
+      const text = await file.text();
+      setContent((prev) => prev + '\n\n' + text);
+    } else if (file.name.endsWith('.pdf')) {
+      // For PDF, we'll add a reference note
+      setContent((prev) => prev + `\n\n[PDF 文件: ${file.name}]`);
+    }
+
+    if (fileInputRef.current) {
+      fileInputRef.current.value = '';
+    }
+  };
+
+  const handleImportImage = async (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    if (!file) return;
+
+    // Convert image to base64
+    const reader = new FileReader();
+    reader.onload = (e) => {
+      const base64 = e.target?.result as string;
+      const imageMarkdown = `![${file.name}](${base64})`;
+      setContent((prev) => prev + '\n\n' + imageMarkdown);
+    };
+    reader.readAsDataURL(file);
+
+    if (imageInputRef.current) {
+      imageInputRef.current.value = '';
+    }
+  };
+
+  const handleExportMd = () => {
+    const exportContent = `# ${title}\n\n${content}`;
+    const blob = new Blob([exportContent], { type: 'text/markdown' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = `${title}.md`;
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    URL.revokeObjectURL(url);
+  };
+
   return (
     <AppLayout>
       <div className="max-w-4xl mx-auto h-full flex flex-col">
         {/* Header */}
-        <div className="flex items-center justify-between mb-6">
+        <div className="flex items-center justify-between mb-4">
           <div className="flex items-center gap-4">
             <button
               onClick={() => router.push('/notes')}
@@ -97,6 +148,49 @@ export default function NoteEditPage() {
           </div>
         </div>
 
+        {/* Toolbar */}
+        <div className="flex items-center gap-2 mb-4 p-2 bg-card border border-card-border rounded-lg">
+          <input
+            ref={fileInputRef}
+            type="file"
+            accept=".md,.pdf"
+            onChange={handleImportFile}
+            className="hidden"
+          />
+          <input
+            ref={imageInputRef}
+            type="file"
+            accept="image/*"
+            onChange={handleImportImage}
+            className="hidden"
+          />
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={() => fileInputRef.current?.click()}
+          >
+            <FileText className="w-4 h-4 mr-1" />
+            导入文件
+          </Button>
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={() => imageInputRef.current?.click()}
+          >
+            <Image className="w-4 h-4 mr-1" />
+            插入图片
+          </Button>
+          <div className="flex-1" />
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={handleExportMd}
+          >
+            <Upload className="w-4 h-4 mr-1" />
+            导出 MD
+          </Button>
+        </div>
+
         {/* Editor */}
         <motion.div
           initial={{ opacity: 0, y: 20 }}
@@ -105,10 +199,19 @@ export default function NoteEditPage() {
         >
           {isEditing ? (
             <textarea
+              ref={textareaRef}
               value={content}
               onChange={(e) => handleContentChange(e.target.value)}
               className="w-full h-full p-6 bg-card border border-card-border rounded-lg text-foreground font-mono text-sm resize-none focus:outline-none focus:ring-2 focus:ring-primary"
-              placeholder="使用 Markdown 编写笔记..."
+              placeholder="使用 Markdown 编写笔记...
+
+支持的语法：
+# 标题
+**粗体** *斜体*
+- 列表
+![图片描述](图片地址)
+
+点击上方按钮可导入文件或插入图片"
             />
           ) : (
             <div className="h-full p-6 bg-card border border-card-border rounded-lg overflow-y-auto prose prose-invert max-w-none">
@@ -126,12 +229,27 @@ export default function NoteEditPage() {
 }
 
 function simpleMarkdownToHtml(md: string): string {
-  return md
-    .replace(/^### (.*$)/gm, '<h3>$1</h3>')
-    .replace(/^## (.*$)/gm, '<h2>$1</h2>')
-    .replace(/^# (.*$)/gm, '<h1>$1</h1>')
-    .replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>')
-    .replace(/\*(.*?)\*/g, '<em>$1</em>')
-    .replace(/^- (.*$)/gm, '<li>$1</li>')
-    .replace(/\n/g, '<br>');
+  // Handle images
+  let html = md.replace(/!\[([^\]]*)\]\(([^)]+)\)/g, '<img src="$2" alt="$1" class="max-w-full h-auto rounded-lg my-4" />');
+
+  // Handle headers
+  html = html.replace(/^### (.*$)/gm, '<h3 class="text-lg font-semibold mt-6 mb-2">$1</h3>');
+  html = html.replace(/^## (.*$)/gm, '<h2 class="text-xl font-bold mt-8 mb-3">$1</h2>');
+  html = html.replace(/^# (.*$)/gm, '<h1 class="text-2xl font-bold mt-10 mb-4">$1</h1>');
+
+  // Handle formatting
+  html = html.replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>');
+  html = html.replace(/\*(.*?)\*/g, '<em>$1</em>');
+
+  // Handle lists
+  html = html.replace(/^- (.*$)/gm, '<li class="ml-4">$1</li>');
+
+  // Handle line breaks
+  html = html.replace(/\n\n/g, '</p><p class="mb-4">');
+  html = html.replace(/\n/g, '<br>');
+
+  // Wrap in paragraph
+  html = '<p class="mb-4">' + html + '</p>';
+
+  return html;
 }
